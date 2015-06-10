@@ -1,4 +1,5 @@
-#define EPSILON	-1
+#define EPSILON		-1
+#define ANY_CHAR	-2
 
 struct edge;
 
@@ -17,11 +18,39 @@ void set_state_terminal(state_t *st)
 	st->is_terminal = 1;
 }
 
-edge_t *new_epsilon_edge()
+edge_t* new_edge()
 {
-	edge_t *e = (edge_t*)calloc(1, sizeof(edge_t));
-	e->val = EPSILON;
+	return (edge_t*)calloc(1, sizeof(edge_t));
+}
+
+edge_t* new_epsilon_edge()
+{
+	edge_t *e = new_edge();
+	if (e)
+		e->val = EPSILON;
 	return e;
+}
+
+state_t* new_state(int in_cnt, int out_cnt)
+{
+	state_t *st = (state_t*)calloc(1, sizeof(state_t));
+
+	if (!st)
+		return NULL;
+
+	if ((st->in = (edge_t**)calloc(in_cnt+1, sizeof(edge_t*))) == NULL)
+		goto err;
+
+	if ((st->out = (edge_t**)calloc(out_cnt+1, sizeof(edge_t*))) == NULL){
+		free(st->in);
+		goto err;
+	}
+
+	return st;	
+
+err:
+	free(st);
+	return NULL;
 }
 
 state_t* new_state_repetition(char c, char type)
@@ -78,24 +107,20 @@ state_t* new_state_repetition_choose(char c)
 
 state_t * new_state_normal(char c)
 {
-	state_t* st = (state_t*)calloc(1, sizeof(state_t));
-	if (!st)
+	state_t *st = new_state(1, 1);
+
+	edge_t *e = new_edge();
+	edge_t *out = new_epsilon_edge();
+
+	if (!out || !e)
 		return NULL;
 
-	st->in = (edge_t**)calloc(2, sizeof(edge_t*));
-	st->out = (edge_t**)calloc(2, sizeof(edge_t*));
-
-	edge_t *e = (edge_t*)calloc(1, sizeof(edge_t));
-	edge_t *out = new_epsilon_edge() 
 	out->from = st;
-
-	if (!st->in || !st->out || !out || !e)
-		return NULL;
+	e->val = c;
+	e->in = st;
 
 	st->in[0] = e;
 	st->out[0] = out;
-	e->val = c;
-	e->in = st;
 	return st;
 }
 
@@ -125,6 +150,9 @@ state_t* state_connect(state_t *st1, state_t *st2)
 
 state_t* state_connect(state_t *st1, state_t *st2)
 {
+	state_t *st = (state_t*)calloc(1, sizeof(state_t));
+	if (!st)
+		return NULL;
 }
 state_t* state_alternate(state_t *st1, state_t *st2)
 {
