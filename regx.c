@@ -1,227 +1,446 @@
-#define EPSILON		-1
-#define ANY_CHAR	-2
+#include <stdlib.h>
+#include <ctype.h>
+
+#include "dynamic_stack.h"
+
+#define EPSILON        -1
+#define ANY_CHAR       -2
+#define CONNECT_CHAR   '#'
 
 struct edge;
 
 typedef struct state {
-	int is_terminal;
-	struct edge **in, **out;
+    int is_terminal;
+    struct edge **in, **out;
 }state_t;
 
 typedef struct edge {
-	int val;
-	struct state *from, *to;
+    int val;
+    struct state *from, *to;
 }edge_t;
+
+typedef struct state_unit {
+    struct state *head, *tail;
+}state_unit_t;
 
 void set_state_terminal(state_t *st)
 {
-	st->is_terminal = 1;
+    st->is_terminal = 1;
 }
 
 edge_t* new_edge()
 {
-	return (edge_t*)calloc(1, sizeof(edge_t));
+    return (edge_t*)calloc(1, sizeof(edge_t));
 }
 
 edge_t* new_epsilon_edge()
 {
-	edge_t *e = new_edge();
-	if (e)
-		e->val = EPSILON;
-	return e;
+    edge_t *e = new_edge();
+    if (e)
+        e->val = EPSILON;
+    return e;
 }
 
 state_t* new_state(int in_cnt, int out_cnt)
 {
-	state_t *st = (state_t*)calloc(1, sizeof(state_t));
+    state_t *st = (state_t*)calloc(1, sizeof(state_t));
+    if (!st)
+        goto err;
 
-	if (!st)
-		return NULL;
+    if ((st->in = (edge_t**)calloc(in_cnt+1, sizeof(edge_t*))) == NULL)
+        goto err;
 
-	if ((st->in = (edge_t**)calloc(in_cnt+1, sizeof(edge_t*))) == NULL)
-		goto err;
+    if ((st->out = (edge_t**)calloc(out_cnt+1, sizeof(edge_t*))) == NULL)
+        goto err;
 
-	if ((st->out = (edge_t**)calloc(out_cnt+1, sizeof(edge_t*))) == NULL){
-		free(st->in);
-		goto err;
-	}
-
-	return st;	
+    return st;    
 
 err:
+    if (st)
+        free(st->in);
+    free(st);
+    return NULL;
+}
+
+void delete_state(state_t *st)
+{
+    if (st) {
+        free(st->in);
+        free(st->out);
+    }
 	free(st);
-	return NULL;
 }
 
-state_t* new_state_repetition(char c, char type)
+state_unit_t* new_state_unit(state_t *st)
 {
-	state_t *st = (state_t*)calloc(1, sizeof(state_t));
+    state_unit_t * st_un = (state_unit_t*)malloc(sizeof(state_unit_t));
+    if (st_un) 
+        st_un->head = st_un->tail = st;
 
-	if (!st)
-		return NULL;
+    return st_un;
+}
 
-	st->in = (edge_t**)calloc(3, sizeof(edge_t*));
-	st->out = (edge_t**)calloc(3, sizeof(edge_t*));
+state_t * new_state_normal_char(char c)
+{
+    state_t *st = new_state(1, 1);
+    if (!st)
+        return NULL;
 
-	edge_t *in = (edge_t*)calloc(1, sizeof(edge_t));
-	edge_t *out = (edge_t*)calloc(1, sizeof(edge_t));
-	edge_t *e = (edge_t*)calloc(1, sizeof(edge_t));
+    edge_t *e = NULL, *out = NULL; 
+    if (!(e = new_edge()))
+        goto err;
 
-	if (!st->in || !st->out || !in || !out || !e)
-		return NULL;
+    if (!(out = new_epsilon_edge()))
+        goto err;
 
-	if (type == '+')
-		in->val = c;
+    out->from = st;
+    e->val = c;
+    e->to = st;
+
+    st->in[0] = e;
+    st->out[0] = out;
+    return st;
+
+err:
+	free(e);
+    delete_state(st);
+    return NULL;
+}
+
+state_unit_t* state_connect(state_unit_t *st_un1, state_unit_t *st_un2)
+{
+    state_t *st = new_state(1, 1); 
+    if (!st)
+        return NULL;
+
+    st->in[0] = st_un1->tail->out[0];
+    st->out[0] = st_un2->head->in[0];
+
+    st_un1->tail->out[0]->to = st;
+    st_un2->head->in[0]->from = st;
+
+    st_un1->tail = st_un2->tail;
+
+    free(st_un2);
+    return st_un1;
+}
+
+state_unit_t* state_alternate(state_unit_t *st_un1, state_unit_t *st_un2)
+{
+	state_t *st_start = NULL, *st_end = NULL;
+	edge_t *in = NULL, *out = NULL;
+
+    st_start = new_state(1, 2);
+    st_end = new_state(2, 1);
+    in = new_epsilon_edge();
+    out = new_epsilon_edge();
+
+	if (!st_start || !st_end || !in || !out)
+		goto err;
+
+    st_start->in[0] = in;
+    st_start->out[0] = st_un1->head->in[0];
+    st_start->out[1] = st_un2->head->in[0];
+
+    in->to = st_start;
+    st_un1->head->in[0]->from = st_start;
+    st_un2->head->in[0]->from = st_start;
+
+    st_end->out[0] = out;
+    st_end->in[0] = st_un1->tail->out[0];
+    st_end->in[1] = st_un2->tail->out[0];
+
+    out->from = st_end;
+    st_un1->tail->out[0]->to = st_end;
+    st_un2->tail->out[0]->to = st_end;
+
+    st_un1->head = st_start;
+    st_un1->tail = st_end;
+    free(st_un2);
+    return st_un1;
+
+err:
+    delete_state(st_start);
+    delete_state(st_end);
+	free(in);
+	free(out);
+    return NULL;
+}
+
+state_unit_t* state_closure(state_unit_t *st_un, char type)
+{
+    state_t *st_start = NULL, *st_end = NULL;
+    edge_t *in = NULL, *out = NULL, *back = NULL;
+
+    if (type == '*')
+        st_start = new_state(2, 2);
+    else if (type == '+') {
+        st_start = new_state(2, 1);
+        st_end = new_state(1, 2);
+    }
+    else if (type == '?') {
+        st_start = new_state(1, 2);
+        st_end = new_state(2, 1);
+    }
+
+    in = new_epsilon_edge(); 
+    out = new_epsilon_edge();
+
+    if (!st_start || !st_end || !in || !out)
+        goto err;
+
+    st_start->in[0] = in;
+    in->to = st_start;
+
+    if (type == '*') 
+        st_start->out[1] = st_un->head->in[0];
+    else 
+        st_start->out[0] = st_un->head->in[0];
+
+    st_un->head->in[0]->from = st_start;
+
+    if (type == '*') {
+        st_start->out[0] = out;
+        out->from = st_start;
+
+        st_un->tail->out[0]->to = st_start;
+        st_start->in[1] = st_un->tail->out[0];
+    }
+    else{
+        st_end->out[0] = out;
+        out->from = st_end;
+
+        st_un->tail->out[0]->to = st_end;
+        st_end->in[0] = st_un->tail->out[0];
+
+        if ((back = new_epsilon_edge()) == NULL )
+            goto err;
+
+        if (type == '+') {
+            back->from = st_end;
+            back->to = st_start;
+            st_end->out[1] = back;
+            st_start->in[1] = back;
+        }
+        else if (type == '?') {
+            back->from = st_start;
+            back->to = st_end;
+            st_end->in[1] = back;
+            st_start->out[1] = back;
+        }
+    }
+
+	st_un->head = st_start;
+	if(type == '*')
+		st_un->tail = st_start;
 	else
-		in->val = EPSILON;
+		st_un->tail = st_end;
 
-	out->val = EPSILON;
-	e->val = c;
-	in->to = out->from = e->from = st;
+	return st_un;
 
-	if (type != '?')
-		e->to = st;
-
-	st->in[0] = in;
-	st->in[1] = e;
-	st->out[0] = out;
-	st->out[1] = e;
-
-	return st;
-}
-
-state_t* new_state_repetition_star(char c)
-{
-	return new_state_repetition(c, '*');
-}
-
-state_t* new_state_repetition_plus(char c)
-{
-	return new_state_repetition(c, '+');
-}
-
-state_t* new_state_repetition_choose(char c)
-{
-	return new_state_repetition(c, '?');
-}
-
-state_t * new_state_normal(char c)
-{
-	state_t *st = new_state(1, 1);
-
-	edge_t *e = new_edge();
-	edge_t *out = new_epsilon_edge();
-
-	if (!out || !e)
-		return NULL;
-
-	out->from = st;
-	e->val = c;
-	e->in = st;
-
-	st->in[0] = e;
-	st->out[0] = out;
-	return st;
+err:
+    delete_state(st_start);
+    delete_state(st_end);
+    free(in);
+    free(out);
+    return NULL;
 }
 
 /*
-state_t* state_connect(state_t *st1, state_t *st2)
+ *            in[0]      out[0]
+ *    ---e-->--+--------+-->--e--        
+ *             |st_start|
+ *       +-->--+--------+----+
+ *       |  in[1]     out[1] |
+ *       |      st_un        |
+ *       +-------------------+
+ *       
+ */
+state_unit_t* state_closure_star(state_unit_t *st_un)
 {
-	state_t *st = (state_t*)calloc(1, sizeof(state_t));
-	if (!st)
-		return NULL;
+    return state_closure(st_un, '*');
+}
 
-	edge_t *e;	
-	int i;
-	for (i = 0, e = st1->out[0]; e; e++, i++)
-		e->to = st;
-	st->in = (edge_t**)calloc(i+1, sizeof(edge_t*));
-	memcpy(st->in, st1->out, i*sizeof(edge_t*));
+/*
+ *            in[0]     in[1]        out[1]       out[0]
+ *    ---e-->--+--------+--<--e----<--+---------+-->--e--
+ *             |st_start|             | st_end  |
+ *             +--------+-->------->--+---------+
+ *                    out[0] st_un  in[0]
+ *
+ */
+state_unit_t* state_closure_plus(state_unit_t *st_un)
+{
+    return state_closure(st_un, '+');
+}
 
-	//only one up to now
-	for (i = 0, e = st2->in[0]; e; e++, i++)
-		e->from = st;
-	st->out = (edge_t**)calloc(i+1, sizeof(edge_t*));
-	memcpy(st->out, st2->in, i*sizeof(edge_t*));
+/*
+ *            in[0]      out[1]        in[1]       out[0]
+ *    ---e-->--+--------+-->--e---->--+---------+-->--e--
+ *             |st_start|             | st_end  |
+ *             +--------+-->------->--+---------+
+ *                    out[0] st_un  in[0]
+ *
+ */
+state_unit_t* state_closure_0or1(state_unit_t *st_un)
+{
+    return state_closure(st_un, '?');
+}
 
-	return st1;
+/*
+state_t* new_state_add_start(state_t *st)
+{
+    state_t *st = (state_t*)calloc(1, sizeof(state_t));
+    if (!st)
+        return NULL;
+    st->out = (edge_t**)calloc(2, sizeof(edge_t*));
+    st->out[0] = st->in[0];
+    st->in[0]->from = st;
+    return st;
 }
 */
 
-state_t* state_connect(state_t *st1, state_t *st2)
+state_unit_t* build_nfa_from_regx(char *regx)
 {
-	state_t *st = (state_t*)calloc(1, sizeof(state_t));
-	if (!st)
-		return NULL;
-}
-state_t* state_alternate(state_t *st1, state_t *st2)
-{
-	state_t *st_start = (state_t*)calloc(1, sizeof(state_t));
-	if (!st_start)
-		return NULL;
-	st_start->in = (edge_t**)calloc(2, sizeof(edge_t*));
-	st_start->out = (edge_t**)calloc(3, sizeof(edge_t*));
-	if (!st_start->in || !st_start->out)
-		return NULL;
+	struct flag_t {
+		int alt_cnt;
+		int st_unit_cnt;
+	}tmp_flag, *tmp_flag_p;
 
-	edgt_t *e = (edge_t*)calloc(1, sizeof(edge_t));
-	e->val = EPSILON;
-	e->to = st_start;
-	st1->in[0]->from = st2->in[0]->from = st_start;
+	state_unit_t **tmp_stu, **tmp_stu1;
+	int st_unit_cnt = 0, alt_cnt = 0;
 
-	st_start->in[0] = e;
-	st_start->out[0] = st1->in[0];
-	st_start->out[1] = st2->in[0];
+	dstack_t *nfa_stack = dstack_init(0, sizeof(state_unit_t*));
+	dstack_t *flag_stack = dstack_init(5, sizeof(struct flag_t));
 
-	return st_start;
-}
+	while(isspace(*regx)) regx++;
 
-state_t* state_closure(state_t *st, char type)
-{
-	state_t *st_new = (state_t*)calloc(1, sizeof(state_t));
-	if (!st_new)
-		return NULL;
+	for (; *regx; regx++) {
+		switch(*regx) {
+			case '*':
+				if (!st_unit_cnt) 
+					goto err;
 
-	edge_t *e;	
-	int i;
-	for (i = 0, e = st->out[0]; e; e++, i++)
-		e->to = st_new;
-	st_new->in = (edge_t**)calloc(i+2, sizeof(edge_t*));
+				tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+				*tmp_stu1 = state_closure_star(*tmp_stu);
+				dstack_push(nfa_stack, (void*)tmp_stu1);
+				break;
+			case '+':
+				if (!st_unit_cnt) 
+					goto err;
 
-	st_new->out = (edge_t**)calloc(3, sizeof(edge_t*));
-	if (!st_new->in || !st_new->out)
-		return NULL;
+				tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+				*tmp_stu1 = state_closure_plus(*tmp_stu);
+				dstack_push(nfa_stack, (void*)tmp_stu1);
+				break;
+			case '?':
+				if (!st_unit_cnt) 
+					goto err;
 
-	memcpy(st_new->in[1], st->out, i*sizeof(edge_t*));
+				tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+				*tmp_stu1 = state_closure_0or1(*tmp_stu);
+				dstack_push(nfa_stack, (void*)tmp_stu1);
+				break;
+			case '(':
+				// while ?
+				if (st_unit_cnt > 1) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_connect(*tmp_stu, *tmp_stu1));
+					st_unit_cnt--;
+				}
 
-	edge_t *in = (edge_t*)calloc(1, sizeof(edge_t));
-	edge_t *out = (edge_t*)calloc(1, sizeof(edge_t));
+				tmp_flag.alt_cnt = alt_cnt;
+				tmp_flag.st_unit_cnt = st_unit_cnt;
+				dstack_push(flag_stack, (void*)&tmp_flag);
 
-	if (!in || !out)
-		return NULL;
+				alt_cnt = 0;
+				st_unit_cnt = 0;
 
-	if (type == '*')
-		in->val = EPSILON;
+				break;
+			case ')':
+				if (dstack_isempty(flag_stack) || !st_unit_cnt)
+					goto err;
 
-	out->val = EPSILON;
-	st_new->in[0] = in;
-	st_new->out[0] = out;
-	st_new->out[1] = st->in[0];
+				while (--st_unit_cnt > 0) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_connect(*tmp_stu, *tmp_stu1));
+				}
 
-	st->in[0]->from = st->new;
-	in->to = st_new;
-	out->from = st_new;
-	
-	return st_new;
-}
+				while (alt_cnt-- > 0) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_alternate(*tmp_stu, *tmp_stu1));
+				}
 
-state_t* new_state_add_start(state_t *st)
-{
-	state_t *st = (state_t*)calloc(1, sizeof(state_t));
-	if (!st)
-		return NULL;
-	st->out = (edge_t**)calloc(2, sizeof(edge_t*));
-	st->out[0] = st->in[0];
-	st->in[0]->from = st;
-	return st;
+				tmp_flag_p = (struct flag_t*)dstack_pop(flag_stack);
+				st_unit_cnt = tmp_flag_p->st_unit_cnt;
+				alt_cnt = tmp_flag_p->alt_cnt;
+
+				st_unit_cnt++;
+
+				break;
+			case '|':
+				if (!st_unit_cnt) 
+					goto err;
+
+				alt_cnt++;
+				while (--st_unit_cnt > 0) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_connect(*tmp_stu, *tmp_stu1));
+				}
+
+				/* priority is lowest
+				if (alt_cnt > 1) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_alternate(*tmp_stu, *tmp_stu1));
+					alt_cnt--;
+				}
+				*/
+
+				break;
+			default:
+				if (st_unit_cnt > 1) {
+					tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+					tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+					dstack_push(nfa_stack, state_connect(*tmp_stu, *tmp_stu1));
+					st_unit_cnt--;
+				}
+				dstack_push(nfa_stack, new_state_unit(new_state_normal_char(*regx)));
+				st_unit_cnt++;
+				break;
+		}
+	}
+
+	if (!dstack_isempty(flag_stack))
+		goto err;
+
+	while (--st_unit_cnt > 0) {
+		tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+		tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+		dstack_push(nfa_stack, state_connect(*tmp_stu, *tmp_stu1));
+	}
+
+	while (alt_cnt-- > 0) {
+		tmp_stu = (state_unit_t**)dstack_pop(nfa_stack);
+		tmp_stu1 = (state_unit_t**)dstack_pop(nfa_stack);
+		dstack_push(nfa_stack, state_alternate(*tmp_stu, *tmp_stu1));
+	}
+
+	*tmp_stu = (state_unit_t*)dstack_pop(nfa_stack);
+
+	dstack_destory(nfa_stack);
+	dstack_destory(flag_stack);
+
+	return *tmp_stu;
+
+err:
+	// nfa destory
+	dstack_destory(nfa_stack);
+	dstack_destory(flag_stack);
+
+	return NULL;
 }
