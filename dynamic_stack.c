@@ -12,47 +12,34 @@ dstack_t* dstack_init(int cap, int meta_size)
 	if (!dst)
 		return NULL;
 
-	dst->cap = cap;
-	dst->top = -1;
-	dst->meta_size = meta_size;
-	dst->entry = calloc(cap, meta_size);
+	dst->arr = darray_init(cap, meta_size);
 
 	return dst;
 }
 
 int dstack_isempty(dstack_t *st)
 {
-	return st->top == -1;
+	return st->arr->size == 0;
 }
 
 void* dstack_pop(dstack_t *st)
 {
 	if (!dstack_isempty(st)) {
-		st->top--;
-		return dstack_nth_addr(st, st->top+1);
+		st->arr->size--;
+		return darray_nth_addr(st->arr, st->arr->size);
 	}
 	return NULL;
 }
 
 int dstack_push(dstack_t *st, void *ele)
 {
-	if (st->top == st->cap - 1) {
-		void*tmp = realloc(st->entry, st->meta_size * 2 * st->cap);
-		if (!tmp) 
-			return -1;
-		else
-			st->entry = tmp;
-		st->cap *= 2;
-	}
-	memcpy(dstack_nth_addr(st, st->top+1), ele, st->meta_size);
-	st->top++;
-	return 0;
+	return darray_addback(st->arr, ele);
 }
 
 void dstack_destory(dstack_t *st)
 {
 	if (st)
-		free(st->entry);
+		darray_destory(st->arr);
 	free(st);
 }
 

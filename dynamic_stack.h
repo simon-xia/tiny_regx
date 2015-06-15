@@ -1,16 +1,13 @@
 #ifndef _DYNAMIC_STACK_H_
 #define _DYNAMIC_STACK_H_
 
+#include "dynamic_array.h"
+
 #define DSTACK_DEFAULT_SIZE	16
 
 typedef struct dstack {
-	int cap;
-	int top;
-	int meta_size;
-	void* entry;
+	darray_t *arr;
 }dstack_t;
-
-#define dstack_nth_addr(s, n) (void*)((char*)((s)->entry) + (n)*((s)->meta_size))
 
 dstack_t* dstack_init(int, int);
 int dstack_isempty(dstack_t *);
